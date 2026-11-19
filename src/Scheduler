@@ -7,4 +7,50 @@ public class Scheduler {
     private final ArrayList<GPU> gpus = new ArrayList<>();
     private long nextJobNumber = 1;
 
+public Scheduler(ApplicationState state) {
+        if (state == null) {
+            throw new IllegalArgumentException("ApplicationState is required.");
+        }
+        this.state = state;
+
+        // References to the existing GPUs, in increasing ID order.
+        for (int i = 1; i <= 4; i++) {
+            GPU gpu = state.findGpu("G" + i);
+            if (gpu == null) {
+                throw new IllegalStateException("Missing GPU: G" + i);
+            }
+            gpus.add(gpu);
+        }
+    }
+
+    public Job submitJob(String title, String applicationName,
+                         String description, String taskSize) {
+        User user = state.getCurrentUser();
+        if (!(user instanceof Student)) {
+            throw new IllegalStateException("Log in as a student to submit a job.");
+        }
+
+        Job job = new Job(createJobId(), user.getUsername(), title,
+            applicationName, description, taskSize);
+        Math.addExact(SimulationClock.getCurrentMinute(), job.getEstimatedDuration());
+
+        // Process existing work before checking the student's available balance.
+        update();
+        state.addJob(job); // Validates ownership, reserves minutes, stores the job.
+        dispatchNow();
+        return job;
+    }
+
+  private void checkForMissedCompletions() {
+        int now = SimulationClock.getCurrentMinute();
+        for (GPU gpu : gpus) {
+            Job job = gpu.getCurrentJob();
+            if (job != null && "Running".equals(job.getStatus())
+                    && gpu.getExpectedFinish() < now) {
+                throw new IllegalStateException(
+                    "A finish minute was skipped. Call scheduler.update() after every clock advance.");
+            }
+        }
+    }
+
 }
