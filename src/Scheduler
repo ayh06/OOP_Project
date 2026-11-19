@@ -1,1 +1,10 @@
+import java.util.ArrayList;
 
+
+public class Scheduler {
+
+    private final ApplicationState state;
+    private final ArrayList<GPU> gpus = new ArrayList<>();
+    private long nextJobNumber = 1;
+
+}
