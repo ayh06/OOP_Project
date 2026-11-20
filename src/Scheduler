@@ -53,4 +53,88 @@ public Scheduler(ApplicationState state) {
         }
     }
 
+/** Call immediately after EVERY SimulationClock.advanceMinute(). */
+public void update() {
+    checkForMissedCompletions();
+    int now = SimulationClock.getCurrentMinute();
+
+    // Finish ALL due jobs before assigning any waiting jobs.
+    for (GPU gpu : gpus) {
+        Job job = gpu.getCurrentJob();
+        if (job == null) continue;
+
+        if ("Running".equals(job.getStatus()) && gpu.getExpectedFinish() == now) {
+            job.complete();
+        }
+
+        if (job.isTerminal()) {
+            allowanceFor(job).settleJob(job);
+            gpu.release();
+        }
+    }
+
+    dispatchNow();
+}
+
+    private void dispatchNow() {
+        ArrayList<Job> queue = orderedQueue();
+        int next = 0;
+
+        for (GPU gpu : gpus) {
+            if (next == queue.size()) break;
+            if (gpu.isAvailable()) {
+                Job job = queue.get(next);
+                Math.addExact(SimulationClock.getCurrentMinute(), job.getEstimatedDuration());
+                gpu.assign(job);
+                next++;
+            }
+        }
+    }
+
+    // Builds a queue from shared job records, avoiding a second stored queue.
+    // Sort order: submission minute, then String job ID for ties.
+    private ArrayList<Job> orderedQueue() {
+        ArrayList<Job> queue = new ArrayList<>();
+        for (Job job : state.getAllJobs()) {
+            if (!"Queued".equals(job.getStatus())) continue;
+
+            int position = 0;
+            while (position < queue.size() && !comesBefore(job, queue.get(position))) {
+                position++;
+            }
+            queue.add(position, job);
+        }
+        return queue;
+    }
+
+    private boolean comesBefore(Job first, Job second) {
+        if (first.getSubmissionTime() != second.getSubmissionTime()) {
+            return first.getSubmissionTime() < second.getSubmissionTime();
+        }
+        return first.getJobId().compareTo(second.getJobId()) < 0;
+    }
+private String createJobId() {
+    while (nextJobNumber <= 9999999999L) {
+        String number = String.valueOf(nextJobNumber++);
+        while (number.length() < 10) number = "0" + number;
+        String id = "J" + number;
+        boolean exists = false;
+        for (Job job : state.getAllJobs()) {
+            if (job.getJobId().equals(id)) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) return id;
+    }
+    throw new IllegalStateException("No more generated job IDs are available.");
+}
+
+private TimeAllowance allowanceFor(Job job) {
+    TimeAllowance allowance = state.findAllowance(job.getStudentId());
+    if (allowance == null) {
+        throw new IllegalStateException("Student allowance not found.");
+    }
+    return allowance;
+}
 }
