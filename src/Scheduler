@@ -137,4 +137,128 @@ private TimeAllowance allowanceFor(Job job) {
     }
     return allowance;
 }
+public void dispatchWaitingJobs() {
+    update();
+}
+
+public void cancelJob(String jobId, String reason) {
+    // findJob checks login and prevents access to another student's job.
+    Job job = requireVisibleJob(jobId);
+    String validReason = User.requireText(reason, "Cancellation reason");
+    User actor = state.getCurrentUser();
+    if (!(actor instanceof Student) && !(actor instanceof Administrator)) {
+        throw new IllegalStateException("Student or administrator login required.");
+    }
+
+    // A job due now must complete rather than be cancelled.
+    update();
+    job.cancel(actor.getUsername(), validReason);
+    allowanceFor(job).settleJob(job);
+
+    for (GPU gpu : gpus) {
+        if (gpu.getCurrentJob() == job) {
+            gpu.release();
+        }
+    }
+
+    dispatchNow();
+}
+
+public ArrayList<Job> getJobs() {
+    return state.getJobs();
+}
+
+public ArrayList<GPU> getGpus() {
+    return state.getGpus();
+}
+
+// Administrator sees the full queue; a student sees only their queued jobs.
+public ArrayList<Job> getQueue() {
+    requireLoggedIn();
+    ArrayList<Job> visible = new ArrayList<>();
+    for (Job job : orderedQueue()) {
+        if (state.isAdministratorLoggedIn()
+                || job.getStudentId().equals(state.getCurrentUser().getUsername())) {
+            visible.add(job);
+        }
+    }
+    return visible;
+}
+
+// Position in the full queue: 1 means first; 0 means not queued.
+public int getQueuePosition(String jobId) {
+    Job target = requireVisibleJob(jobId);
+    ArrayList<Job> queue = orderedQueue();
+    for (int i = 0; i < queue.size(); i++) {
+        if (queue.get(i) == target) return i + 1;
+    }
+    return 0;
+}
+
+public int getPredictedStartTime(String jobId) {
+    return predict(requireVisibleJob(jobId))[0];
+}
+
+public int getPredictedFinishTime(String jobId) {
+    return predict(requireVisibleJob(jobId))[1];
+}
+
+// Remaining wait from NOW, not the job's total elapsed queue time.
+public int getPredictedWaitMinutes(String jobId) {
+    Job job = requireVisibleJob(jobId);
+    if (!"Queued".equals(job.getStatus())) return 0;
+    return predict(job)[0] - SimulationClock.getCurrentMinute();
+}
+
+// Returns {start, finish}. Predictions never change jobs, GPUs or the clock.
+private int[] predict(Job target) {
+    checkForMissedCompletions();
+
+    if (target.isTerminal()) {
+        // A job cancelled while queued has start/finish values of -1.
+        return new int[] {target.getStartTime(), target.getFinishTime()};
+    }
+    if ("Running".equals(target.getStatus())) {
+        return new int[] {target.getStartTime(),
+            Math.addExact(target.getStartTime(), target.getEstimatedDuration())};
+    }
+
+    int now = SimulationClock.getCurrentMinute();
+    int[] freeAt = new int[gpus.size()];
+    for (int i = 0; i < gpus.size(); i++) {
+        GPU gpu = gpus.get(i);
+        if (gpu.isAvailable() || gpu.getCurrentJob().isTerminal()) {
+            freeAt[i] = now;
+        } else {
+            freeAt[i] = gpu.getExpectedFinish();
+        }
+    }
+
+    // Simulate preceding queued jobs using only copied availability times.
+    for (Job job : orderedQueue()) {
+        int earliest = 0;
+        for (int i = 1; i < freeAt.length; i++) {
+            if (freeAt[i] < freeAt[earliest]) earliest = i;
+        }
+        // Equal availability retains the lower GPU ID.
+        int start = freeAt[earliest];
+        int finish = Math.addExact(start, job.getEstimatedDuration());
+        if (job == target) return new int[] {start, finish};
+        freeAt[earliest] = finish;
+    }
+
+    throw new IllegalStateException("Job is missing from the queue.");
+}
+
+private Job requireVisibleJob(String jobId) {
+    Job job = state.findJob(User.requireText(jobId, "Job ID"));
+    if (job == null) throw new IllegalArgumentException("Job not found.");
+    return job;
+}
+
+private void requireLoggedIn() {
+    if (state.getCurrentUser() == null) {
+        throw new IllegalStateException("Log in first.");
+    }
+}
 }
