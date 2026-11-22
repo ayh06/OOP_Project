@@ -479,3 +479,49 @@ public class ApplicationState {
 
         return state;
     }
+ // Check pending request
+    private AccessRequest requirePendingRequest(String universityId) {
+
+        AccessRequest request = findRequest(
+            User.requireText(universityId, "University ID"));
+
+        if (request == null) {
+            throw new IllegalArgumentException(
+                "Registration request not found.");
+        }
+
+        request.requirePending();
+
+        return request;
+    }
+
+    // Check login
+    private void requireLoggedIn() {
+
+        if (currentUser == null) {
+            throw new IllegalStateException("Log in first.");
+        }
+    }
+
+    // Check administrator
+    private void requireAdministrator() {
+
+        if (!isAdministratorLoggedIn()) {
+            throw new IllegalStateException(
+                "Administrator login required.");
+        }
+    }
+
+    // Check account permissions
+    private void requireOwnAccountOrAdministrator(String universityId) {
+
+        requireLoggedIn();
+
+        if (!isAdministratorLoggedIn()
+                && !currentUser.getUsername().equals(universityId)) {
+
+            throw new IllegalStateException(
+                "You can only access your own records.");
+        }
+    }
+}
