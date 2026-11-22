@@ -37,6 +37,7 @@ public class AdminDashboardPanel extends JPanel implements UiSupport.Refreshable
     private final JTable studentTable = UiSupport.table(studentModel, "students.table");
     private final JTextField newTotal = UiSupport.named(new JTextField(8), "students.newTotal");
     private final JTextField adjustmentReason = UiSupport.named(new JTextField(24), "students.reason");
+    private final JTextField studentSearch = UiSupport.named(new JTextField(20), "students.search");
     private final JButton adjust = UiSupport.button("Set total allocation", "students.adjust");
     private final DefaultTableModel historyModel = UiSupport.model(
         "Time", "Previous total", "New total", "Administrator", "Reason");
@@ -172,9 +173,16 @@ public class AdminDashboardPanel extends JPanel implements UiSupport.Refreshable
         return panel;
     }
 
-    private JPanel buildStudents() {
+     private JPanel buildStudents() {
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 5, 5, 5));
+        
+        JPanel searchBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        searchBar.add(new JLabel("Search university ID:"));
+        searchBar.add(studentSearch);
+        panel.add(searchBar, BorderLayout.NORTH);
+        UiSupport.onTextChange(studentSearch,this::refreshStudents);
+        
         JPanel students = UiSupport.section("Approved students — select one to adjust their allowance");
         students.add(UiSupport.scrollTable(studentTable), BorderLayout.CENTER);
         JPanel fields = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -291,23 +299,41 @@ public class AdminDashboardPanel extends JPanel implements UiSupport.Refreshable
 
     private void refreshStudents() {
         String selected = selectedId(studentTable);
+        String query = studentSearch.getText().trim().toLowerCase(java.util.Locale.ROOT);
+    
         updating = true;
+    
         try {
             studentTable.clearSelection();
             ArrayList<Object[]> studentRows = new ArrayList<>();
             for (User user : controller.getState().getUsers()) {
-                if (!(user instanceof Student)) continue;
+                if (!(user instanceof Student)) {
+                    continue;
+                }
+    
                 Student student = (Student) user;
-                TimeAllowance allowance = controller.getState().getAllowance(student.getUniversityId());
-                studentRows.add(new Object[] {student.getUniversityId(), student.getName(),
-                    student.getEmail(), student.getPhone(), allowance.getAllocatedMinutes(),
-                    allowance.getUsedMinutes(), allowance.getReservedMinutes(), allowance.getAvailableMinutes()});
+                String universityId = student.getUniversityId();
+                if (!universityId.toLowerCase(java.util.Locale.ROOT)
+                        .contains(query)) {
+                    continue;
+                }
+    
+                TimeAllowance allowance =
+                    controller.getState().getAllowance(universityId);
+    
+                studentRows.add(new Object[] {universityId,student.getName(),student.getEmail(),student.getPhone(),allowance.getAllocatedMinutes(),allowance.getUsedMinutes(),allowance.getReservedMinutes(),allowance.getAvailableMinutes()});
             }
-            UiSupport.replaceTableRows(studentTable, studentModel, studentRows);
+    
+            UiSupport.replaceTableRows(studentTable,studentModel,studentRows);
+    
             restoreSelection(studentTable, selected);
-        } finally { updating = false; }
+    
+        } finally {
+            updating = false;
+        }
+    
         showStudentHistory();
-    }
+}
 
     private void showStudentHistory() {
         String id = selectedId(studentTable);
