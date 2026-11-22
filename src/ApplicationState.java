@@ -320,3 +320,162 @@ public class ApplicationState {
         return visible;
     }
 
+   // Storage and scheduler methods
+    ArrayList<Job> getAllJobs() {
+        return new ArrayList<>(jobs);
+    }
+
+    ArrayList<User> getAllUsers() {
+        return new ArrayList<>(users);
+    }
+
+    ArrayList<AccessRequest> getAllRequests() {
+        return new ArrayList<>(requests);
+    }
+
+    ArrayList<TimeAllowance> getAllAllowances() {
+        return new ArrayList<>(allowances);
+    }
+
+    ArrayList<GPU> getAllGpus() {
+        return new ArrayList<>(gpus);
+    }
+
+    // Restore saved application
+    static ApplicationState restore(ArrayList<User> savedUsers,
+                                    ArrayList<AccessRequest> savedRequests,
+                                    ArrayList<Job> savedJobs,
+                                    ArrayList<TimeAllowance> savedAllowances) {
+
+        ApplicationState state = new ApplicationState();
+
+        state.users.clear();
+
+        int adminCount = 0;
+
+        for (User user : savedUsers) {
+
+            if (state.findUser(user.getUsername()) != null) {
+                throw new IllegalArgumentException(
+                    "Duplicate saved username.");
+            }
+
+            if (user instanceof Administrator) {
+                adminCount++;
+            }
+
+            state.users.add(user);
+        }
+
+        if (adminCount != 1) {
+            throw new IllegalArgumentException(
+                "Exactly one admin is required.");
+        }
+
+        for (AccessRequest request : savedRequests) {
+
+            if (state.findRequest(request.getUniversityId()) != null) {
+                throw new IllegalArgumentException(
+                    "Duplicate saved registration request.");
+            }
+
+            User account = state.findUser(request.getUniversityId());
+
+            if ("Approved".equals(request.getStatus())) {
+
+                if (!(account instanceof Student)) {
+                    throw new IllegalArgumentException(
+                        "Approved request has no student account.");
+                }
+
+                Student student = (Student) account;
+
+                if (!student.getName().equals(request.getName())
+                        || !student.getEmail().equals(request.getEmail())
+                        || !student.getPhone().equals(request.getPhone())
+                        || !student.matchesPassword(request.passwordForStorage())) {
+
+                    throw new IllegalArgumentException(
+                        "Account and approved request differ.");
+                }
+
+            } else if (account != null) {
+
+                throw new IllegalArgumentException(
+                    "Unapproved request has an active account.");
+            }
+
+            state.requests.add(request);
+        }
+
+        for (User user : state.users) {
+
+            if (user instanceof Student
+                    && state.findRequest(user.getUsername()) == null) {
+
+                throw new IllegalArgumentException(
+                    "Student account has no approval record.");
+            }
+        }
+
+        for (TimeAllowance allowance : savedAllowances) {
+
+            if (!(state.findUser(allowance.getStudentId()) instanceof Student)
+                    || state.findAllowance(allowance.getStudentId()) != null) {
+
+                throw new IllegalArgumentException(
+                    "Duplicate or unknown allowance owner.");
+            }
+
+            state.allowances.add(allowance);
+        }
+
+        for (User user : state.users) {
+
+            if (user instanceof Student
+                    && state.findAllowance(user.getUsername()) == null) {
+
+                throw new IllegalArgumentException(
+                    "Student has no allowance.");
+            }
+        }
+
+        for (Job job : savedJobs) {
+
+            if (!(state.findUser(job.getStudentId()) instanceof Student)
+                    || state.findJobRecord(job.getJobId()) != null) {
+
+                throw new IllegalArgumentException(
+                    "Duplicate job ID or unknown student.");
+            }
+
+            if (job.getAssignedGpuId() != null
+                    && state.findGpu(job.getAssignedGpuId()) == null) {
+
+                throw new IllegalArgumentException(
+                    "Job references an unknown GPU.");
+            }
+
+            if ("Cancelled".equals(job.getStatus())) {
+
+                User actor = state.findUser(job.getCancelledBy());
+
+                if (actor == null
+                        || (!(actor instanceof Administrator)
+                        && !actor.getUsername().equals(job.getStudentId()))) {
+
+                    throw new IllegalArgumentException(
+                        "Invalid cancellation actor.");
+                }
+            }
+
+            state.jobs.add(job);
+
+            if ("Running".equals(job.getStatus())) {
+                state.findGpu(job.getAssignedGpuId())
+                    .restoreRunningJob(job);
+            }
+        }
+
+        return state;
+    }
