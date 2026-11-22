@@ -96,3 +96,102 @@ public class ApplicationState {
         return student;
     }
 
+// Reject student
+    public void rejectRequest(String universityId) {
+
+        requireAdministrator();
+
+        requirePendingRequest(universityId).reject();
+    }
+
+    // Adjust GPU allowance
+    public void adjustAllowance(String universityId,
+                                int newTotal, String reason) {
+
+        requireAdministrator();
+
+        TimeAllowance allowance = findAllowance(
+            User.requireText(universityId, "University ID"));
+
+        if (allowance == null) {
+            throw new IllegalArgumentException(
+                "Student allowance not found.");
+        }
+
+        allowance.setAllocatedMinutes(
+            newTotal, currentUser.getUsername(), reason);
+    }
+
+    // Find user
+    public User findUser(String username) {
+
+        if (username == null) {
+            return null;
+        }
+
+        for (User user : users) {
+            if (user.getUsername().equals(username.trim())) {
+                return user;
+            }
+        }
+
+        return null;
+    }
+
+    // Find registration request
+    public AccessRequest findRequest(String universityId) {
+
+        if (universityId == null) {
+            return null;
+        }
+
+        for (AccessRequest request : requests) {
+            if (request.getUniversityId().equals(universityId.trim())) {
+                return request;
+            }
+        }
+
+        return null;
+    }
+
+    // Find allowance
+    TimeAllowance findAllowance(String universityId) {
+
+        for (TimeAllowance allowance : allowances) {
+            if (allowance.getStudentId().equals(universityId)) {
+                return allowance;
+            }
+        }
+
+        return null;
+    }
+
+    // Get student allowance
+    public TimeAllowance getAllowance(String universityId) {
+
+        String id = User.requireText(
+            universityId, "University ID");
+
+        requireOwnAccountOrAdministrator(id);
+
+        TimeAllowance allowance = findAllowance(id);
+
+        if (allowance == null) {
+            throw new IllegalArgumentException(
+                "Student allowance not found.");
+        }
+
+        return allowance;
+    }
+
+    // Find GPU
+    public GPU findGpu(String gpuId) {
+
+        for (GPU gpu : gpus) {
+            if (gpu.getGpuId().equals(gpuId)) {
+                return gpu;
+            }
+        }
+
+        return null;
+    }
