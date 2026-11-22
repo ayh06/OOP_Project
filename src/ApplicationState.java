@@ -191,7 +191,132 @@ public class ApplicationState {
             if (gpu.getGpuId().equals(gpuId)) {
                 return gpu;
             }
+
+            
         }
 
         return null;
     }
+    
+    // Submit GPU job
+    public void addJob(Job job) {
+
+        // NEW: Check simulation date and time
+        if (!SimulationClock.isInitialized()) {
+            throw new IllegalStateException(
+                "Please initialize the simulation date and time first.");
+        }
+
+        if (!(currentUser instanceof Student)) {
+            throw new IllegalStateException(
+                "Log in as a student to submit a job.");
+        }
+
+        if (job == null ||
+                !job.getStudentId().equals(currentUser.getUsername())) {
+
+            throw new IllegalArgumentException(
+                "Job must belong to the logged-in student.");
+        }
+
+        if (findJobRecord(job.getJobId()) != null) {
+            throw new IllegalArgumentException(
+                "Job ID already exists.");
+        }
+
+        TimeAllowance allowance = findAllowance(job.getStudentId());
+
+        if (allowance == null) {
+            throw new IllegalStateException(
+                "Student allowance not found.");
+        }
+
+        allowance.reserve(job);
+        jobs.add(job);
+    }
+
+    // Find job
+    public Job findJob(String jobId) {
+
+        requireLoggedIn();
+
+        Job job = findJobRecord(jobId);
+
+        if (job != null) {
+            requireOwnAccountOrAdministrator(job.getStudentId());
+        }
+
+        return job;
+    }
+
+    private Job findJobRecord(String jobId) {
+
+        for (Job job : jobs) {
+            if (job.getJobId().equals(jobId)) {
+                return job;
+            }
+        }
+
+        return null;
+    }
+
+    // Get users
+    public ArrayList<User> getUsers() {
+
+        requireAdministrator();
+
+        return new ArrayList<>(users);
+    }
+
+    // Get requests
+    public ArrayList<AccessRequest> getRequests() {
+
+        requireAdministrator();
+
+        return new ArrayList<>(requests);
+    }
+
+    // Get pending requests
+    public ArrayList<AccessRequest> getPendingRequests() {
+
+        requireAdministrator();
+
+        ArrayList<AccessRequest> pending = new ArrayList<>();
+
+        for (AccessRequest request : requests) {
+
+            if ("Pending".equals(request.getStatus())) {
+                pending.add(request);
+            }
+        }
+
+        return pending;
+    }
+
+    // Get GPUs
+    public ArrayList<GPU> getGpus() {
+
+        requireLoggedIn();
+
+        return new ArrayList<>(gpus);
+    }
+
+    // Get visible jobs
+    public ArrayList<Job> getJobs() {
+
+        requireLoggedIn();
+
+        ArrayList<Job> visible = new ArrayList<>();
+
+        for (Job job : jobs) {
+
+            if (isAdministratorLoggedIn()
+                    || job.getStudentId().equals(currentUser.getUsername())) {
+
+                visible.add(job);
+            }
+        }
+
+        return visible;
+    }
+
